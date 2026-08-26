@@ -33,8 +33,8 @@ const sanitizeTitle = (title: string) =>
 const isoDay = (meetingAt: string) =>
   new Date(meetingAt).toLocaleDateString("en-CA", { timeZone: TIMEZONE });
 
-/** O `.txt` e o `.json` da mesma reunião compartilham o nome — só muda a pasta. */
-export const transcriptFileName = (meeting: MeetingSummary, ext: "txt" | "json"): string => {
+/** Os três arquivos da mesma reunião compartilham o nome — só mudam pasta e extensão. */
+export const transcriptFileName = (meeting: MeetingSummary, ext: "txt" | "json" | "md"): string => {
   const day = meeting.meetingAt ? isoDay(meeting.meetingAt) : "sem-data";
   return `${day}_${sanitizeTitle(meeting.title)}_${meeting.id}.${ext}`;
 };

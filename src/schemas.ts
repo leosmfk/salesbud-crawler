@@ -51,18 +51,46 @@ export const MEETING_STATUS = {
 
 export type MeetingStatusName = keyof typeof MEETING_STATUS;
 
+/** As "Classifications" cor-de-rosa na tela da reunião. */
+const tag = type({
+  id: "number",
+  name: "string",
+  "description?": "string | null",
+  "+": "ignore",
+});
+
 /** Calibrado contra samples/meetings-list.json. Campos não usados passam direto. */
 export const meetingSummary = type({
   id: "number",
   title: "string",
   status: "number",
+  /** Apesar do nome, é a lista de e-mails convidados, separada por vírgula. */
   "customerName?": "string | null",
   "company?": "string | null",
   "meetingAt?": "string | null",
+  /** Em segundos (2926 = 48min46s, igual ao player). */
   "duration?": "number | null",
   "isNoShow?": "boolean",
+  "tags?": tag.array().or("null"),
+  "evaluation?": type({ "rating?": "number | null", "+": "ignore" }).or("null"),
+  "templateId?": "number | null",
+  "metadata?": type({ "timezone?": "string | null", "+": "ignore" }).or("null"),
+  "User?": type({
+    "firstName?": "string | null",
+    "lastName?": "string | null",
+    "+": "ignore",
+  }).or("null"),
   "+": "ignore",
 });
+
+/** Resposta do template — o "resumo geral" da aba Template. */
+export const templateAnswer = type({
+  "answer?": "string | null",
+  "TemplateQuestion?": type({ "question?": "string | null", "+": "ignore" }).or("null"),
+  "+": "ignore",
+});
+
+export type TemplateAnswer = typeof templateAnswer.infer;
 
 export type MeetingSummary = typeof meetingSummary.infer;
 

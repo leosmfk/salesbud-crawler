@@ -16,11 +16,12 @@ GET /api/meetings?teamId=<id>         → lista de interações
 GET /api/meetings/{id}/transcription  → { id, utterances[{ speaker, text, words[] }] }
 ```
 
-Cada reunião gera dois arquivos, em pastas separadas:
+Cada reunião gera três arquivos, em pastas separadas e com o mesmo nome:
 
 ```
-out/txt/2026-08-20_Rennova_<>_Strattum_2679290.txt
-out/json/2026-08-20_Rennova_<>_Strattum_2679290.json
+out/txt/2026-08-20_Rennova_<>_Strattum_2679290.txt     transcrição
+out/json/2026-08-20_Rennova_<>_Strattum_2679290.json   falas com timing
+out/info/2026-08-20_Rennova_<>_Strattum_2679290.md     ficha da reunião
 ```
 
 O JSON sai **sem o `words[]`** — o timing palavra a palavra é ~95% do payload
@@ -30,6 +31,25 @@ precedência sobre `text`, então strippar antes mudaria o texto.
 
 O `.txt` gerado corresponde à opção **"Original"** do seletor. A versão do
 "Improve with AI" vive em `enhancedTranscript` e não é coberta.
+
+### A ficha (`out/info/*.md`)
+
+Título, data/hora, duração, organizador, rating, classificações, convidados e o
+resumo executivo da aba Template. Quase tudo já vem na listagem; só o resumo
+custa uma chamada a mais:
+
+```
+GET /api/meetings/admin/load/template?meetingId=<id>&templateId=<templateId>
+```
+
+**Nem toda reunião tem resumo acessível.** O template pertence a um usuário, e
+os de outras pessoas respondem `403 TEMPLATE_ACCESS_DENIED` — 13 das 28 caem
+nesse caso. A ficha sai completa mesmo assim, com a seção de resumo marcada como
+vazia. Compare `/api/templates` (o que você acessa) com o `templateId` da
+reunião para saber de antemão.
+
+Transcrição e ficha vêm de endpoints distintos e são buscadas de forma
+independente: gerar uma ficha que falta não rebaixa a transcrição de novo.
 
 ## Segurança: GET-only
 

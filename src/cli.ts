@@ -5,6 +5,7 @@ import { getText } from "./http";
 import { getIdToken } from "./auth";
 import { listMeetings, listTeams } from "./meetings";
 import { fetchTranscript, toTxt, withoutWords } from "./transcript";
+import { fetchTemplateAnswers, toMarkdown } from "./meetingInfo";
 import { existingTranscripts, transcriptFileName } from "./naming";
 import { MEETING_STATUS, type MeetingStatusName } from "./schemas";
 import { SAMPLES_DIR, defaultTeamId, outDir } from "./config";
@@ -67,8 +68,8 @@ const exportTranscripts = async () => {
   const base = outDir();
   const txtDir = join(base, "txt");
   const jsonDir = join(base, "json");
-  await mkdir(txtDir, { recursive: true });
-  await mkdir(jsonDir, { recursive: true });
+  const infoDir = join(base, "info");
+  for (const dir of [txtDir, jsonDir, infoDir]) await mkdir(dir, { recursive: true });
 
   const meetings = await listMeetings({
     teamId: teamId(),
@@ -96,6 +97,7 @@ const exportTranscripts = async () => {
   for (const meeting of meetings) {
     const txtPath = join(txtDir, transcriptFileName(meeting, "txt"));
     const jsonPath = join(jsonDir, transcriptFileName(meeting, "json"));
+    const infoPath = join(infoDir, transcriptFileName(meeting, "md"));
 
     // Nome ou pasta antigos: move em vez de rebaixar a transcrição. Um ENOENT
     // aqui significa que o arquivo já saiu do lugar — não é motivo para abortar
@@ -111,22 +113,40 @@ const exportTranscripts = async () => {
       }
     }
 
-    const [hasTxt, hasJson] = await Promise.all([
+    const [hasTxt, hasJson, hasInfo] = await Promise.all([
       Bun.file(txtPath).exists(),
       Bun.file(jsonPath).exists(),
+      Bun.file(infoPath).exists(),
     ]);
-    if (hasTxt && hasJson && !values.force) {
+    if (hasTxt && hasJson && hasInfo && !values.force) {
       skipped++;
       continue;
     }
 
+    // Transcrição e ficha vêm de endpoints distintos: cada uma só é buscada se
+    // o arquivo dela faltar. Gerar a ficha não custa rebaixar 580 KB de falas.
     try {
-      const data = await fetchTranscript(meeting.id);
-      // O .txt sai do payload completo; o words[] só é descartado depois disso.
-      await Bun.write(txtPath, toTxt(data.utterances));
-      await Bun.write(jsonPath, JSON.stringify(withoutWords(data), null, 2));
+      if (!hasTxt || !hasJson || values.force) {
+        const data = await fetchTranscript(meeting.id);
+        // O .txt sai do payload completo; o words[] só é descartado depois disso.
+        await Bun.write(txtPath, toTxt(data.utterances));
+        await Bun.write(jsonPath, JSON.stringify(withoutWords(data), null, 2));
+        console.log(`✓ ${transcriptFileName(meeting, "txt")} (${data.utterances.length} falas)`);
+      }
+
+      if (!hasInfo || values.force) {
+        // Se o resumo falhar, a ficha sai sem ele em vez de perder o resto.
+        const answers = await fetchTemplateAnswers(meeting.id, meeting.templateId).catch(
+          (error) => {
+            const detail = error instanceof Error ? error.message : error;
+            console.error(`  (sem resumo para ${meeting.id}: ${detail})`);
+            return [];
+          },
+        );
+        await Bun.write(infoPath, toMarkdown(meeting, answers));
+        console.log(`✓ ${transcriptFileName(meeting, "md")}`);
+      }
       downloaded++;
-      console.log(`✓ ${transcriptFileName(meeting, "txt")} (${data.utterances.length} falas)`);
     } catch (error) {
       console.error(`✗ ${meeting.id}: ${error instanceof Error ? error.message : error}`);
     }

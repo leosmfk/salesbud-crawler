@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import { getJson } from "./http";
-import { transcription, type Utterance } from "./schemas";
+import { transcription, type Transcription, type Utterance } from "./schemas";
 
 /**
  * Busca a transcrição de uma reunião.
@@ -43,3 +43,16 @@ export const toTxt = (utterances: readonly Utterance[]): string =>
     const text = words.length > 0 ? words.map((w) => w.text).join(" ") : (u.text ?? "");
     return text.trim() ? `${out}${u.speaker ?? "Unknown"}: ${text}\n\n` : out;
   }, "");
+
+/**
+ * Remove o `words[]` de cada fala.
+ *
+ * É a maior parte do payload (uma call de 48min sai de ~580 KB para ~30 KB) e
+ * guarda só o timing palavra a palavra. Precisa rodar DEPOIS do `toTxt`: as
+ * palavras têm precedência sobre `text` na montagem do arquivo, então descartar
+ * antes mudaria o texto gerado.
+ */
+export const withoutWords = (data: Transcription): Transcription => ({
+  ...data,
+  utterances: data.utterances.map(({ words: _words, ...fala }) => fala),
+});

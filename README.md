@@ -16,10 +16,17 @@ GET /api/meetings?teamId=<id>         → lista de interações
 GET /api/meetings/{id}/transcription  → { id, utterances[{ speaker, text, words[] }] }
 ```
 
-Por padrão **só o `.txt` toca o disco** — o JSON é apenas o transporte, exatamente
-como no navegador, e é descartado da memória. Use `--format both` se quiser
-guardar também a resposta crua (que traz timing por palavra, algo que o `.txt`
-achata).
+Cada reunião gera dois arquivos, em pastas separadas:
+
+```
+out/txt/2026-08-20_Rennova_<>_Strattum_2679290.txt
+out/json/2026-08-20_Rennova_<>_Strattum_2679290.json
+```
+
+O JSON sai **sem o `words[]`** — o timing palavra a palavra é ~95% do payload
+(31 MB → 1.5 MB nas 28 reuniões) e raramente é o que se quer. O `.txt` continua
+sendo gerado a partir do payload completo, antes do descarte: as palavras têm
+precedência sobre `text`, então strippar antes mudaria o texto.
 
 O `.txt` gerado corresponde à opção **"Original"** do seletor. A versão do
 "Improve with AI" vive em `enhancedTranscript` e não é coberta.

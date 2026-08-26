@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { toTxt } from "./transcript";
+import { toTxt, withoutWords } from "./transcript";
 import type { Utterance } from "./schemas";
 
 /**
@@ -31,4 +31,21 @@ test("descarta falas vazias ou só com espaço", () => {
 
 test("speaker ausente vira Unknown em vez de quebrar", () => {
   expect(toTxt([{ text: "oi", words: [] }])).toBe("Unknown: oi\n\n");
+});
+
+test("withoutWords tira o words[] preservando o resto da fala", () => {
+  const data = {
+    id: 630101,
+    utterances: [
+      { speaker: "Thierry Cadier", text: "oi", start: 0, end: 1, words: [{ text: "oi", start: 0, end: 1 }] },
+    ],
+    processingStatus: "IDLE",
+  };
+
+  const stripped = withoutWords(data);
+  expect(stripped.utterances[0]).not.toHaveProperty("words");
+  expect(stripped.utterances[0]).toMatchObject({ speaker: "Thierry Cadier", text: "oi", start: 0, end: 1 });
+  expect(stripped.id).toBe(630101);
+  // o original não é mutado — o .txt é gerado antes, mas nunca dependa disso
+  expect(data.utterances[0]?.words).toHaveLength(1);
 });

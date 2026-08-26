@@ -1,11 +1,11 @@
 import { parseArgs } from "node:util";
 import { mkdir, rename } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { getText } from "./http";
 import { getIdToken } from "./auth";
 import { listMeetings, listTeams } from "./meetings";
-import { fetchTranscript, toTxt } from "./transcript";
-import { exportedIds, transcriptFileName } from "./naming";
+import { fetchTranscript, toTxt, withoutWords } from "./transcript";
+import { existingTranscripts, transcriptFileName } from "./naming";
 import { MEETING_STATUS, type MeetingStatusName } from "./schemas";
 import { SAMPLES_DIR, defaultTeamId, outDir } from "./config";
 
@@ -18,8 +18,6 @@ const { values, positionals } = parseArgs({
     /** Só `completed` tem transcrição — por isso é o padrão. */
     status: { type: "string", default: "completed" },
     limit: { type: "string" },
-    /** txt = só o arquivo final (padrão). both = guarda também a resposta crua. */
-    format: { type: "string", default: "txt" },
     force: { type: "boolean", default: false },
   },
 });
@@ -66,9 +64,11 @@ const calibrate = async (meetingId: string) => {
 
 const exportTranscripts = async () => {
   const limit = values.limit ? Number(values.limit) : undefined;
-  const keepJson = values.format === "both" || values.format === "json";
   const base = outDir();
-  await mkdir(base, { recursive: true });
+  const txtDir = join(base, "txt");
+  const jsonDir = join(base, "json");
+  await mkdir(txtDir, { recursive: true });
+  await mkdir(jsonDir, { recursive: true });
 
   const meetings = await listMeetings({
     teamId: teamId(),
@@ -86,47 +86,54 @@ const exportTranscripts = async () => {
     return;
   }
 
-  // O disco é o índice: o id vive no nome do arquivo.
-  const alreadyOnDisk = await exportedIds(base);
+  // O disco é o índice: o id vive no nome do arquivo. A raiz entra na varredura
+  // para migrar o que versões anteriores gravaram fora de out/txt/.
+  const onDisk = await existingTranscripts([base, txtDir]);
   let downloaded = 0;
-  let renamed = 0;
+  let moved = 0;
   let skipped = 0;
 
   for (const meeting of meetings) {
-    const fileName = transcriptFileName(meeting);
-    const existing = alreadyOnDisk.get(meeting.id);
+    const txtPath = join(txtDir, transcriptFileName(meeting, "txt"));
+    const jsonPath = join(jsonDir, transcriptFileName(meeting, "json"));
 
-    if (existing && !values.force) {
-      // Arquivo do esquema antigo (`<id>.txt`): renomeia em vez de rebaixar.
-      if (existing !== fileName) {
-        await rename(join(base, existing), join(base, fileName));
-        renamed++;
-        console.log(`↻ ${existing} → ${fileName}`);
-      } else {
-        skipped++;
+    // Nome ou pasta antigos: move em vez de rebaixar a transcrição. Um ENOENT
+    // aqui significa que o arquivo já saiu do lugar — não é motivo para abortar
+    // o run inteiro e perder as reuniões seguintes.
+    const previous = onDisk.get(meeting.id);
+    if (previous && previous !== txtPath && !values.force) {
+      try {
+        await rename(previous, txtPath);
+        moved++;
+        console.log(`↻ ${relative(base, previous)} → ${relative(base, txtPath)}`);
+      } catch (error) {
+        console.error(`  (não movi ${relative(base, previous)}: ${error instanceof Error ? error.message : error})`);
       }
+    }
+
+    const [hasTxt, hasJson] = await Promise.all([
+      Bun.file(txtPath).exists(),
+      Bun.file(jsonPath).exists(),
+    ]);
+    if (hasTxt && hasJson && !values.force) {
+      skipped++;
       continue;
     }
 
     try {
       const data = await fetchTranscript(meeting.id);
-      // Só o .txt toca o disco por padrão; o JSON é descartado da memória.
-      await Bun.write(join(base, fileName), toTxt(data.utterances));
-      if (keepJson) {
-        await Bun.write(
-          join(base, fileName.replace(/\.txt$/, ".json")),
-          JSON.stringify(data, null, 2),
-        );
-      }
+      // O .txt sai do payload completo; o words[] só é descartado depois disso.
+      await Bun.write(txtPath, toTxt(data.utterances));
+      await Bun.write(jsonPath, JSON.stringify(withoutWords(data), null, 2));
       downloaded++;
-      console.log(`✓ ${fileName} (${data.utterances.length} falas)`);
+      console.log(`✓ ${transcriptFileName(meeting, "txt")} (${data.utterances.length} falas)`);
     } catch (error) {
       console.error(`✗ ${meeting.id}: ${error instanceof Error ? error.message : error}`);
     }
   }
 
-  const parts = [`${downloaded} nova(s)`];
-  if (renamed) parts.push(`${renamed} renomeada(s)`);
+  const parts = [`${downloaded} baixada(s)`];
+  if (moved) parts.push(`${moved} movida(s)`);
   if (skipped) parts.push(`${skipped} já em dia`);
   console.log(`\n${parts.join(", ")} em ${base}/`);
 };
@@ -156,7 +163,6 @@ switch (command) {
   bun run export --limit 5         começa pequeno
   bun run export --status all      inclui não-concluídas (sem transcrição)
   bun run export --id 2679290      uma só
-  bun run export --format both     guarda também o JSON cru
   bun run export --force           rebaixa tudo, ignorando o que há em disco
   bun run calibrate <id>           regrava samples/
   bun run login                    força login novo`);

@@ -74,3 +74,5 @@ export const meetingsPage = type({
   "itemCount?": "number",
   "+": "ignore",
 });
+
+export type Transcription = typeof transcription.infer;

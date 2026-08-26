@@ -1,6 +1,11 @@
 import { type } from "arktype";
 import { getJson } from "./http";
-import { meetingsPage, type MeetingSummary } from "./schemas";
+import {
+  MEETING_STATUS,
+  meetingsPage,
+  type MeetingStatusName,
+  type MeetingSummary,
+} from "./schemas";
 
 /**
  * Listagem de reuniões.
@@ -9,25 +14,29 @@ import { meetingsPage, type MeetingSummary } from "./schemas";
  *   limit, page, teamId, teamIds[], scope, sharedWithMe, status,
  *   meetingType, mediaType, query, startDate, endDate, minRating, maxRating, tagId
  *
- * Sem `teamId`, o backend responde no escopo "My Meetings" — foi por isso que a
- * Fase 0 voltou com `{"meetings":[],"itemCount":0}`.
+ * Sem `teamId` o backend responde no escopo "My Meetings" e a lista vem vazia.
  */
 
 export type ListFilters = {
-  /** Ex.: o time Strattum. Sem isto, você recebe só as suas próprias reuniões. */
+  /** Ex.: 1685 = Strattum. Obrigatório na prática. */
   teamId?: string;
-  status?: string;
+  /** `undefined` = todos os status. Só `completed` tem transcrição. */
+  status?: MeetingStatusName;
   limit?: number;
 };
 
-const PAGE_SIZE = 50;
+/** O backend ignora `limit` acima disto e devolve 30 de qualquer forma. */
+const PAGE_SIZE = 30;
+
+/** Trava de sanidade contra um `hasMore` que nunca vira false. */
+const MAX_PAGES = 200;
 
 const fetchPage = async (page: number, filters: ListFilters) => {
   const params = new URLSearchParams({
     limit: String(PAGE_SIZE),
     page: String(page),
     ...(filters.teamId ? { teamId: filters.teamId } : {}),
-    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.status ? { status: String(MEETING_STATUS[filters.status]) } : {}),
   });
 
   const parsed = meetingsPage(await getJson(`/api/meetings?${params}`));
@@ -55,8 +64,5 @@ export const listMeetings = async (filters: ListFilters = {}): Promise<MeetingSu
   return collected;
 };
 
-/** Times visíveis ao usuário — use para descobrir o teamId do Strattum. */
+/** Times visíveis ao usuário — use para descobrir o teamId. */
 export const listTeams = async (): Promise<unknown> => getJson("/api/teams");
-
-/** Trava de sanidade contra um `hasMore` que nunca vira false. */
-const MAX_PAGES = 200;

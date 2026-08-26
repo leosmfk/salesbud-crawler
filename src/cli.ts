@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getText } from "./http";
 import { getIdToken } from "./auth";
 import { listMeetings, listTeams } from "./meetings";
+import { MEETING_STATUS, type MeetingStatusName } from "./schemas";
 import { fetchTranscript, toTxt } from "./transcript";
 import { SAMPLES_DIR, outDir } from "./config";
 
@@ -13,6 +14,8 @@ const { values, positionals } = parseArgs({
   options: {
     id: { type: "string" },
     team: { type: "string" },
+    /** Só `completed` tem transcrição — por isso é o padrão. */
+    status: { type: "string", default: "completed" },
     limit: { type: "string" },
     /** txt = só o arquivo final (padrão). json = também guarda a resposta crua. */
     format: { type: "string", default: "txt" },
@@ -21,6 +24,20 @@ const { values, positionals } = parseArgs({
 });
 
 const command = positionals[0] ?? "help";
+
+const isStatusName = (value: string): value is MeetingStatusName => value in MEETING_STATUS;
+
+/** "all" desliga o filtro; qualquer outro valor precisa existir no enum. */
+const statusFilter = (): MeetingStatusName | undefined => {
+  const raw = values.status ?? "completed";
+  if (raw === "all") return undefined;
+  if (!isStatusName(raw)) {
+    throw new Error(
+      `--status inválido: ${raw}. Use all, ${Object.keys(MEETING_STATUS).join(", ")}.`,
+    );
+  }
+  return raw;
+};
 
 /** Fase 0: não interpreta nada, só registra a verdade para calibrarmos em cima. */
 const calibrate = async (meetingId: string) => {
@@ -51,7 +68,9 @@ const exportTranscripts = async () => {
 
   const ids = values.id
     ? [values.id]
-    : (await listMeetings({ teamId: values.team, limit })).map((m) => String(m.id));
+    : (await listMeetings({ teamId: values.team, status: statusFilter(), limit })).map((m) =>
+        String(m.id),
+      );
 
   if (ids.length === 0) {
     console.log(
@@ -109,7 +128,8 @@ switch (command) {
   default:
     console.log(`Uso:
   bun run teams                        lista os times (pegue o id do Strattum)
-  bun run export --team <id>           exporta os .txt do time
+  bun run export --team <id>           exporta os .txt das concluídas
+  bun run export --team <id> --status all
   bun run export --team <id> --limit 5 começa pequeno
   bun run export --id 2679290          exporta uma só
   bun run export --format both         guarda também o JSON cru

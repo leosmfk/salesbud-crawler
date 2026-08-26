@@ -33,13 +33,34 @@ export const transcription = type({
 export type Utterance = typeof utterance.infer;
 
 /**
- * O shape do item de reunião ainda NÃO foi confirmado — a lista voltou vazia
- * na Fase 0 porque o padrão é "My Meetings". Só `id` é garantido (a rota
- * /meetings/:id usa inteiro). O resto passa direto até vermos uma página cheia.
+ * Status de reunião, confirmados empiricamente contra o time 1685
+ * (0+1+3+4 = 158 = itemCount total, então a lista está completa):
+ *   0  pendente ......  9
+ *   1  agendada ..... 11   (todas no futuro, duration 0)
+ *   3  concluída .... 28   ← as únicas que têm transcrição
+ *   4  não aconteceu  110  (no-show / sem gravação)
+ *
+ * O filtro do app expõe só três estados: All, Completed, Did not happen.
  */
+export const MEETING_STATUS = {
+  pending: 0,
+  scheduled: 1,
+  completed: 3,
+  didNotHappen: 4,
+} as const;
+
+export type MeetingStatusName = keyof typeof MEETING_STATUS;
+
+/** Calibrado contra samples/meetings-list.json. Campos não usados passam direto. */
 export const meetingSummary = type({
-  id: "number | string",
-  "title?": "string | null",
+  id: "number",
+  title: "string",
+  status: "number",
+  "customerName?": "string | null",
+  "company?": "string | null",
+  "meetingAt?": "string | null",
+  "duration?": "number | null",
+  "isNoShow?": "boolean",
   "+": "ignore",
 });
 

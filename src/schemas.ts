@@ -1,60 +1,55 @@
 import { type } from "arktype";
 
 /**
- * Schemas INFERIDOS do bundle do app — ainda não calibrados contra uma resposta
- * real (isso é a Fase 0: `bun run calibrate <id>`). São deliberadamente
- * permissivos nos campos que não consegui confirmar, e estritos no que o código
- * do app comprovadamente usa: `speaker`, `text` e `words[].text`.
- *
- * Fonte: assets/TranscriptTab-*.js
- *   const words = seg.words || [];
- *   const text  = words.length ? words.map(w => w.text).join(" ") : seg.text || "";
+ * Schemas CALIBRADOS contra respostas reais (samples/, Fase 0).
+ * Onde há `| null` ou `?`, é tolerância deliberada: a amostra veio limpa, mas
+ * uma call ainda processando pode não ter tudo.
  */
 
-export const transcriptWord = type({
+const word = type({
   text: "string",
-  "start?": "number | null",
-  "end?": "number | null",
-  "+": "ignore",
+  start: "number",
+  end: "number",
+  "speaker?": "string | null",
 });
 
-export const transcriptSegment = type({
-  "speaker?": "string | number | null",
-  "text?": "string | null",
-  "words?": transcriptWord.array().or("null"),
-  "+": "ignore",
+/** O app chama de "segmento"; a API chama de utterance. Speaker já vem resolvido. */
+export const utterance = type({
+  text: "string | null",
+  "speaker?": "string | null",
+  "words?": word.array().or("null"),
+  "start?": "number",
+  "end?": "number",
 });
 
-export const transcriptSegments = transcriptSegment.array();
+export const transcription = type({
+  id: "number",
+  utterances: utterance.array(),
+  /** Versão do "Improve with AI"; null quando só existe a Original. */
+  "enhancedTranscript?": "unknown",
+  "processingStatus?": "string | null",
+});
 
-export type TranscriptSegment = typeof transcriptSegment.infer;
+export type Utterance = typeof utterance.infer;
 
-/** IDs de reunião são inteiros (ex.: /meetings/2679290). */
+/**
+ * O shape do item de reunião ainda NÃO foi confirmado — a lista voltou vazia
+ * na Fase 0 porque o padrão é "My Meetings". Só `id` é garantido (a rota
+ * /meetings/:id usa inteiro). O resto passa direto até vermos uma página cheia.
+ */
 export const meetingSummary = type({
   id: "number | string",
   "title?": "string | null",
-  "date?": "string | null",
-  "createdAt?": "string | null",
   "+": "ignore",
 });
 
 export type MeetingSummary = typeof meetingSummary.infer;
 
-/**
- * A resposta pode vir como array puro ou envelopada. Em vez de adivinhar um
- * formato só, aceitamos os invólucros comuns e falhamos alto se for outro —
- * a Fase 0 fixa isto para o formato real.
- */
-export const unwrap = (payload: unknown, keys: readonly string[]): unknown[] => {
-  if (Array.isArray(payload)) return payload;
-  if (payload && typeof payload === "object") {
-    for (const key of keys) {
-      const value = (payload as Record<string, unknown>)[key];
-      if (Array.isArray(value)) return value;
-    }
-  }
-  throw new Error(
-    `Formato inesperado. Esperava array ou objeto com ${keys.join("/")}, veio: ` +
-      `${JSON.stringify(payload).slice(0, 300)}`,
-  );
-};
+/** Envelope confirmado: {"meetings":[],"pageCount":0,"itemCount":0,"hasMore":false} */
+export const meetingsPage = type({
+  meetings: meetingSummary.array(),
+  "hasMore?": "boolean",
+  "pageCount?": "number",
+  "itemCount?": "number",
+  "+": "ignore",
+});

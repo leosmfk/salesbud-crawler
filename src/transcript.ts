@@ -1,19 +1,21 @@
 import { type } from "arktype";
 import { getJson } from "./http";
-import { transcriptSegments, unwrap, type TranscriptSegment } from "./schemas";
+import { transcription, type Utterance } from "./schemas";
 
-/** Envelopes plausíveis para a lista de segmentos. Fixado na Fase 0. */
-const SEGMENT_KEYS = ["segments", "transcription", "transcript", "data", "items"] as const;
-
+/**
+ * Busca a transcrição de uma reunião.
+ *
+ * O JSON é só o transporte — é exatamente o que o navegador recebe quando você
+ * abre a aba Transcription. Quem decide o que vai para o disco é o chamador.
+ */
 export const fetchTranscript = async (meetingId: string | number) => {
   const payload = await getJson(`/api/meetings/${meetingId}/transcription`);
-  const list = unwrap(payload, SEGMENT_KEYS);
 
-  const parsed = transcriptSegments(list);
+  const parsed = transcription(payload);
   if (parsed instanceof type.errors) {
-    throw new Error(`Segmentos fora do schema em ${meetingId}: ${parsed.summary}`);
+    throw new Error(`Transcrição ${meetingId} fora do schema: ${parsed.summary}`);
   }
-  return { raw: payload, segments: parsed };
+  return parsed;
 };
 
 /**
@@ -27,22 +29,17 @@ export const fetchTranscript = async (meetingId: string | number) => {
  *     if (text.trim()) out += `${speaker}: ${text}\n\n`;
  *   });
  *
- * Atenção ao separador: são DUAS quebras de linha, não uma.
+ * Dois detalhes que importam para a saída bater:
+ *  - o separador é DUAS quebras de linha, não uma;
+ *  - `words[]` tem precedência sobre `text`, e as palavras são unidas por um
+ *    espaço — o que pode diferir da pontuação de `text`.
+ *
+ * Corresponde à opção "Original" do seletor. O "Improve with AI" vive em
+ * `enhancedTranscript` e não é coberto aqui.
  */
-export const toTxt = (
-  segments: readonly TranscriptSegment[],
-  resolveSpeaker: (speaker: TranscriptSegment["speaker"]) => string = defaultSpeaker,
-): string =>
-  segments.reduce((out, segment) => {
-    const words = segment.words ?? [];
-    const text = words.length > 0 ? words.map((w) => w.text).join(" ") : (segment.text ?? "");
-    return text.trim() ? `${out}${resolveSpeaker(segment.speaker)}: ${text}\n\n` : out;
+export const toTxt = (utterances: readonly Utterance[]): string =>
+  utterances.reduce((out, u) => {
+    const words = u.words ?? [];
+    const text = words.length > 0 ? words.map((w) => w.text).join(" ") : (u.text ?? "");
+    return text.trim() ? `${out}${u.speaker ?? "Unknown"}: ${text}\n\n` : out;
   }, "");
-
-/**
- * No app, `speaker` passa por um resolvedor que troca o id pelo nome do
- * participante. Sem esse mapa, caímos no valor cru — a Fase 0 mostra se o
- * endpoint já devolve o nome pronto.
- */
-const defaultSpeaker = (speaker: TranscriptSegment["speaker"]): string =>
-  speaker === null || speaker === undefined ? "Unknown" : String(speaker);

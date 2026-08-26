@@ -1,52 +1,62 @@
 import { type } from "arktype";
 import { getJson } from "./http";
-import { meetingSummary, unwrap, type MeetingSummary } from "./schemas";
-
-/** Envelopes plausíveis para a lista de reuniões. Fixado na Fase 0. */
-const LIST_KEYS = ["data", "items", "meetings", "results", "content"] as const;
+import { meetingsPage, type MeetingSummary } from "./schemas";
 
 /**
- * Uma página de /api/meetings. A paginação real (page/offset/cursor) ainda não
- * foi confirmada — `listMeetings` tenta o parâmetro mais comum e para assim que
- * uma página vem vazia ou repete IDs já vistos, o que é seguro em qualquer
- * dos três esquemas.
+ * Listagem de reuniões.
+ *
+ * A query foi extraída do próprio app (RTK Query, bundle index-*.js):
+ *   limit, page, teamId, teamIds[], scope, sharedWithMe, status,
+ *   meetingType, mediaType, query, startDate, endDate, minRating, maxRating, tagId
+ *
+ * Sem `teamId`, o backend responde no escopo "My Meetings" — foi por isso que a
+ * Fase 0 voltou com `{"meetings":[],"itemCount":0}`.
  */
-const fetchPage = async (page: number): Promise<MeetingSummary[]> => {
-  const payload = await getJson(`/api/meetings?page=${page}`);
-  const list = unwrap(payload, LIST_KEYS);
 
-  const parsed = meetingSummary.array()(list);
+export type ListFilters = {
+  /** Ex.: o time Strattum. Sem isto, você recebe só as suas próprias reuniões. */
+  teamId?: string;
+  status?: string;
+  limit?: number;
+};
+
+const PAGE_SIZE = 50;
+
+const fetchPage = async (page: number, filters: ListFilters) => {
+  const params = new URLSearchParams({
+    limit: String(PAGE_SIZE),
+    page: String(page),
+    ...(filters.teamId ? { teamId: filters.teamId } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+  });
+
+  const parsed = meetingsPage(await getJson(`/api/meetings?${params}`));
   if (parsed instanceof type.errors) {
     throw new Error(`Lista de reuniões fora do schema: ${parsed.summary}`);
   }
   return parsed;
 };
 
-/**
- * Percorre as páginas até acabar. `limit` corta cedo — use sempre num primeiro
- * run, antes de puxar o histórico inteiro.
- */
-export const listMeetings = async (limit?: number): Promise<MeetingSummary[]> => {
+/** Percorre as páginas usando o `hasMore` que a própria API devolve. */
+export const listMeetings = async (filters: ListFilters = {}): Promise<MeetingSummary[]> => {
   const collected: MeetingSummary[] = [];
-  const seen = new Set<string>();
 
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const batch = await fetchPage(page);
-    if (batch.length === 0) break;
+    const { meetings, hasMore } = await fetchPage(page, filters);
+    if (meetings.length === 0) break;
 
-    const fresh = batch.filter((m) => !seen.has(String(m.id)));
-    // Página repetida = o parâmetro `page` foi ignorado pelo backend.
-    if (fresh.length === 0) break;
-
-    for (const meeting of fresh) {
-      seen.add(String(meeting.id));
+    for (const meeting of meetings) {
       collected.push(meeting);
-      if (limit && collected.length >= limit) return collected;
+      if (filters.limit && collected.length >= filters.limit) return collected;
     }
+    if (!hasMore) break;
   }
 
   return collected;
 };
 
-/** Trava de sanidade: sem paginação confirmada, não varremos indefinidamente. */
+/** Times visíveis ao usuário — use para descobrir o teamId do Strattum. */
+export const listTeams = async (): Promise<unknown> => getJson("/api/teams");
+
+/** Trava de sanidade contra um `hasMore` que nunca vira false. */
 const MAX_PAGES = 200;

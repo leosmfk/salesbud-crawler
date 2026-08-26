@@ -6,6 +6,7 @@
   "scripts": {
     "calibrate": "bun run src/cli.ts calibrate",
     "export": "bun run src/cli.ts export",
+    "teams": "bun run src/cli.ts teams",
     "login": "bun run src/cli.ts login",
     "typecheck": "tsc --noEmit"
   },

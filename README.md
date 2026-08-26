@@ -12,13 +12,17 @@ para fazer uma concatenação de strings — e depois reparsear o resultado.
 Este cliente vai direto à fonte:
 
 ```
-GET /api/meetings                     → lista de interações
-GET /api/meetings/{id}/transcription  → segmentos { speaker, text, words[] }
+GET /api/meetings?teamId=<id>         → lista de interações
+GET /api/meetings/{id}/transcription  → { id, utterances[{ speaker, text, words[] }] }
 ```
 
-O JSON traz **mais** que o download manual: timing por palavra e speaker
-separado, que o `.txt` achata. Ainda assim, `toTxt()` reproduz o `.txt` oficial
-byte-a-byte para quem precisa do formato original.
+Por padrão **só o `.txt` toca o disco** — o JSON é apenas o transporte, exatamente
+como no navegador, e é descartado da memória. Use `--format both` se quiser
+guardar também a resposta crua (que traz timing por palavra, algo que o `.txt`
+achata).
+
+O `.txt` gerado corresponde à opção **"Original"** do seletor. A versão do
+"Improve with AI" vive em `enhancedTranscript` e não é coberta.
 
 ## Segurança: GET-only
 
@@ -35,24 +39,26 @@ estão no `.gitignore`. Mantenha assim.
 cp .env.example .env    # preencha SALESBUD_EMAIL e SALESBUD_PASSWORD
 bun install
 
-# Fase 0 — grava respostas cruas para calibrar os schemas
-bun run calibrate 2679290
-
-# Export
-bun run export --limit 5        # sempre comece pequeno
-bun run export --id 2679290
-bun run export                  # histórico completo
+bun run teams                          # descubra o id do time Strattum
+bun run export --team <id> --limit 5   # sempre comece pequeno
+bun run export --team <id>             # histórico do time
+bun run export --id 2679290            # uma só
 ```
 
-Saída em `out/<meeting-id>/` com `raw.json` + `transcript.txt`. Reruns pulam o
-que já está no disco (`--force` ignora), então dá para interromper e retomar.
+**Sem `--team`, o backend responde no escopo "My Meetings"** e a lista volta
+vazia. O filtro de time é o mesmo que o seletor "Team Strattum" do app aplica.
+
+Saída em `out/<meeting-id>.txt`. Reruns pulam o que já está no disco (`--force`
+ignora), então dá para interromper e retomar.
 
 ## Estado
 
-Autenticação e transporte estão prontos. Os schemas em `src/schemas.ts` e a
-paginação em `src/meetings.ts` foram **inferidos do bundle do app** e ainda não
-foram confirmados contra uma resposta real — é para isso que serve
-`bun run calibrate`. Rode-o primeiro e ajuste os schemas com o que voltar.
+Transcrição: **calibrada e verificada** contra uma resposta real (81 falas,
+saída idêntica à do app).
+
+Listagem: o envelope (`meetings` / `hasMore` / `pageCount`) está confirmado, mas
+o **shape do item de reunião ainda não** — a Fase 0 voltou vazia por causa do
+escopo. `meetingSummary` só exige `id` até vermos uma página cheia.
 
 ## Notas
 

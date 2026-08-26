@@ -3,24 +3,19 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getText } from "./http";
 import { getIdToken } from "./auth";
-import { listMeetings } from "./meetings";
+import { listMeetings, listTeams } from "./meetings";
 import { fetchTranscript, toTxt } from "./transcript";
 import { SAMPLES_DIR, outDir } from "./config";
-
-/**
- * Comandos:
- *   calibrate <id>  Fase 0 — grava respostas cruas em samples/ para fixar os schemas
- *   export          baixa transcrições (use --limit num primeiro run)
- *   login           força login novo, descartando o cache
- */
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
   allowPositionals: true,
   options: {
     id: { type: "string" },
+    team: { type: "string" },
     limit: { type: "string" },
-    format: { type: "string", default: "both" },
+    /** txt = só o arquivo final (padrão). json = também guarda a resposta crua. */
+    format: { type: "string", default: "txt" },
     force: { type: "boolean", default: false },
   },
 });
@@ -30,9 +25,11 @@ const command = positionals[0] ?? "help";
 /** Fase 0: não interpreta nada, só registra a verdade para calibrarmos em cima. */
 const calibrate = async (meetingId: string) => {
   await mkdir(SAMPLES_DIR, { recursive: true });
+  const team = values.team ? `&teamId=${values.team}` : "";
 
   const targets = [
-    { name: "meetings-list.json", path: "/api/meetings?page=1" },
+    { name: "teams.json", path: "/api/teams" },
+    { name: "meetings-list.json", path: `/api/meetings?limit=50&page=1${team}` },
     { name: `transcription-${meetingId}.json`, path: `/api/meetings/${meetingId}/transcription` },
   ] as const;
 
@@ -46,37 +43,44 @@ const calibrate = async (meetingId: string) => {
       console.error(`✗ ${target.path}: ${error instanceof Error ? error.message : error}`);
     }
   }
-  console.log("Fase 0 concluída. Me mostre o samples/ para eu fixar os schemas.");
 };
 
 const exportTranscripts = async () => {
   const limit = values.limit ? Number(values.limit) : undefined;
-  const format = values.format ?? "both";
+  const keepJson = values.format === "json" || values.format === "both";
 
   const ids = values.id
     ? [values.id]
-    : (await listMeetings(limit)).map((m) => String(m.id));
+    : (await listMeetings({ teamId: values.team, limit })).map((m) => String(m.id));
+
+  if (ids.length === 0) {
+    console.log(
+      "Nenhuma reunião. Sem --team o escopo é 'My Meetings' — rode `bun run teams` para achar o id do Strattum.",
+    );
+    return;
+  }
 
   console.log(`${ids.length} reunião(ões) para exportar.`);
   const base = outDir();
+  await mkdir(base, { recursive: true });
   let done = 0;
   let skipped = 0;
 
   for (const id of ids) {
-    const dir = join(base, id);
+    const txtPath = join(base, `${id}.txt`);
     // Idempotente: rerun não rebate na API para o que já está no disco.
-    if (!values.force && (await Bun.file(join(dir, "raw.json")).exists())) {
+    if (!values.force && (await Bun.file(txtPath).exists())) {
       skipped++;
       continue;
     }
 
     try {
-      const { raw, segments } = await fetchTranscript(id);
-      await mkdir(dir, { recursive: true });
-      if (format !== "txt") await Bun.write(join(dir, "raw.json"), JSON.stringify(raw, null, 2));
-      if (format !== "json") await Bun.write(join(dir, "transcript.txt"), toTxt(segments));
+      const data = await fetchTranscript(id);
+      // Só o .txt toca o disco por padrão. O JSON é descartado da memória.
+      await Bun.write(txtPath, toTxt(data.utterances));
+      if (keepJson) await Bun.write(join(base, `${id}.json`), JSON.stringify(data, null, 2));
       done++;
-      console.log(`✓ ${id} (${segments.length} segmentos)`);
+      console.log(`✓ ${id}.txt (${data.utterances.length} falas)`);
     } catch (error) {
       console.error(`✗ ${id}: ${error instanceof Error ? error.message : error}`);
     }
@@ -92,6 +96,9 @@ switch (command) {
     await calibrate(id);
     break;
   }
+  case "teams":
+    console.log(JSON.stringify(await listTeams(), null, 2));
+    break;
   case "export":
     await exportTranscripts();
     break;
@@ -101,9 +108,11 @@ switch (command) {
     break;
   default:
     console.log(`Uso:
-  bun run calibrate <id>              Fase 0 — grava respostas cruas em samples/
-  bun run export [--limit N]          exporta transcrições
-  bun run export --id 2679290         exporta uma só
-  bun run export --format txt|json    padrão: both
-  bun run login                       força login novo`);
+  bun run teams                        lista os times (pegue o id do Strattum)
+  bun run export --team <id>           exporta os .txt do time
+  bun run export --team <id> --limit 5 começa pequeno
+  bun run export --id 2679290          exporta uma só
+  bun run export --format both         guarda também o JSON cru
+  bun run calibrate <id> [--team <id>] regrava samples/
+  bun run login                        força login novo`);
 }

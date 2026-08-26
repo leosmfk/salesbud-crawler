@@ -22,6 +22,9 @@ export const SAMPLES_DIR = "samples";
 
 export const outDir = () => process.env.SALESBUD_OUT_DIR ?? "out";
 
+/** Time padrão do export. Sem ele, o backend responde só "My Meetings". */
+export const defaultTeamId = () => process.env.SALESBUD_TEAM_ID;
+
 const required = (name: string): string => {
   const value = process.env[name];
   if (!value) throw new Error(`Faltando ${name} no .env — copie o .env.example.`);

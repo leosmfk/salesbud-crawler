@@ -39,12 +39,33 @@ estão no `.gitignore`. Mantenha assim.
 cp .env.example .env    # preencha SALESBUD_EMAIL e SALESBUD_PASSWORD
 bun install
 
-bun run teams                          # descubra o id do time (Strattum = 1685)
-bun run export --team 1685 --limit 5   # sempre comece pequeno
-bun run export --team 1685             # todas as concluídas
-bun run export --team 1685 --status all
-bun run export --id 2679290            # uma só
+bun run sync                    # baixa só as transcrições novas
+bun run teams                   # lista os times (Strattum = 1685)
+bun run export --limit 5        # começa pequeno
+bun run export --status all     # inclui não-concluídas (sem transcrição)
+bun run export --id 2679290     # uma só
+bun run export --force          # rebaixa tudo
 ```
+
+`sync` é o comando do dia a dia: lista as concluídas do time e baixa apenas as
+que ainda não estão em disco. Rodar duas vezes seguidas não gera requisição de
+transcrição nenhuma.
+
+O time vem de `SALESBUD_TEAM_ID` no `.env` (ou `--team`).
+
+### Nomes dos arquivos
+
+```
+out/2026-08-20 - Rennova <> Strattum - 2679290.txt
+```
+
+`AAAA-MM-DD - Título - id.txt`. Três decisões por trás disso:
+
+- **Data em horário de Brasília.** `meetingAt` vem em UTC (`19:00Z` = `16:00`
+  BRT); formatar em UTC jogaria reuniões noturnas para o dia seguinte.
+- **O id no fim.** Título+data colidem nos dados reais (duas "Dry run Vivo" em
+  2026-08-18). O id também é o índice do `sync` — não há manifesto separado.
+- **`/` vira `-`.** O título "RJ / Marco" criaria uma subpasta.
 
 **Só reuniões concluídas têm transcrição**, então `--status completed` é o
 padrão. Os status foram confirmados contra o time 1685 (a soma bate com o

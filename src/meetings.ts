@@ -23,6 +23,11 @@ export type ListFilters = {
   /** `undefined` = todos os status. Só `completed` tem transcrição. */
   status?: MeetingStatusName;
   limit?: number;
+  /**
+   * Uma reunião específica. A API não expõe busca por id, então paginamos até
+   * achar — precisamos do título e da data da listagem para nomear o arquivo.
+   */
+  onlyId?: number;
 };
 
 /** O backend ignora `limit` acima disto e devolve 30 de qualquer forma. */
@@ -55,6 +60,10 @@ export const listMeetings = async (filters: ListFilters = {}): Promise<MeetingSu
     if (meetings.length === 0) break;
 
     for (const meeting of meetings) {
+      if (filters.onlyId !== undefined) {
+        if (meeting.id === filters.onlyId) return [meeting];
+        continue;
+      }
       collected.push(meeting);
       if (filters.limit && collected.length >= filters.limit) return collected;
     }

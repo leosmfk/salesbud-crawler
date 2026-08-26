@@ -1,136 +1,95 @@
-# salesbud-export
+# salesbud-crawler
 
-Cliente headless para extrair transcrições do Salesbud, que não tem API pública.
-
-## Por que não é web scraping
-
-O botão de download do app (`.txt` / `.docx`) é **100% client-side**: ele monta o
-arquivo no navegador a partir de um JSON que a página já buscou. Não existe
-endpoint de `.txt` no backend. Automatizar aquele clique seria subir um Chrome
-para fazer uma concatenação de strings — e depois reparsear o resultado.
-
-Este cliente vai direto à fonte:
-
-```
-GET /api/meetings?teamId=<id>         → lista de interações
-GET /api/meetings/{id}/transcription  → { id, utterances[{ speaker, text, words[] }] }
-```
-
-Cada reunião gera três arquivos, em pastas separadas e com o mesmo nome:
-
-```
-out/txt/2026-08-20_Rennova_<>_Strattum_2679290.txt     transcrição
-out/json/2026-08-20_Rennova_<>_Strattum_2679290.json   falas com timing
-out/info/2026-08-20_Rennova_<>_Strattum_2679290.md     ficha da reunião
-```
-
-O JSON sai **sem o `words[]`** — o timing palavra a palavra é ~95% do payload
-(31 MB → 1.5 MB nas 28 reuniões) e raramente é o que se quer. O `.txt` continua
-sendo gerado a partir do payload completo, antes do descarte: as palavras têm
-precedência sobre `text`, então strippar antes mudaria o texto.
-
-O `.txt` gerado corresponde à opção **"Original"** do seletor. A versão do
-"Improve with AI" vive em `enhancedTranscript` e não é coberta.
-
-### A ficha (`out/info/*.md`)
-
-Título, data/hora, duração, organizador, rating, classificações, convidados e o
-resumo executivo da aba Template. Quase tudo já vem na listagem; só o resumo
-custa uma chamada a mais:
-
-```
-GET /api/meetings/admin/load/template?meetingId=<id>&templateId=<templateId>
-```
-
-**Nem toda reunião tem resumo acessível.** O template pertence a um usuário, e
-os de outras pessoas respondem `403 TEMPLATE_ACCESS_DENIED` — 13 das 28 caem
-nesse caso. A ficha sai completa mesmo assim, com a seção de resumo marcada como
-vazia. Compare `/api/templates` (o que você acessa) com o `templateId` da
-reunião para saber de antemão.
-
-Transcrição e ficha vêm de endpoints distintos e são buscadas de forma
-independente: gerar uma ficha que falta não rebaixa a transcrição de novo.
-
-## Segurança: GET-only
-
-`src/http.ts` só sabe fazer GET. O mesmo padrão de URL usado para ler também
-expõe escrita em produção (`/title`, `/tags`, `/send-bot`, `/restart-bot`,
-`/override-no-show`), então a trava está no transporte, não numa convenção.
-
-Transcrição de call é PII pesada: `out/`, `samples/`, `.env` e `.auth.json`
-estão no `.gitignore`. Mantenha assim.
+Cliente headless que baixa transcrições e metadados de reuniões do Salesbud, que
+não tem API pública.
 
 ## Uso
 
 ```bash
-cp .env.example .env    # preencha SALESBUD_EMAIL e SALESBUD_PASSWORD
+cp .env.example .env    # SALESBUD_EMAIL, SALESBUD_PASSWORD, SALESBUD_TEAM_ID
 bun install
 
-bun run sync                    # baixa só as transcrições novas
-bun run teams                   # lista os times (Strattum = 1685)
+bun run sync                    # baixa só o que ainda não está em disco
+bun run teams                   # lista os times, para achar o SALESBUD_TEAM_ID
 bun run export --limit 5        # começa pequeno
-bun run export --status all     # inclui não-concluídas (sem transcrição)
-bun run export --id 2679290     # uma só
+bun run export --id 2679290     # uma reunião
+bun run export --status all     # inclui não-concluídas (não têm transcrição)
 bun run export --force          # rebaixa tudo
 ```
 
-`sync` é o comando do dia a dia: lista as concluídas do time e baixa apenas as
-que ainda não estão em disco. Rodar duas vezes seguidas não gera requisição de
-transcrição nenhuma.
+`sync` é o comando do dia a dia. O id da reunião vive no nome do arquivo, então
+o disco é o índice: rodar duas vezes seguidas não gera requisição nenhuma.
 
-O time vem de `SALESBUD_TEAM_ID` no `.env` (ou `--team`).
+## Saída
 
-**Só reuniões concluídas têm transcrição**, então `--status completed` é o
-padrão. Os status foram confirmados contra o time 1685 (a soma bate com o
-`itemCount` total, então a lista está completa):
-
-| status | nome           | qtd | transcrição |
-| ------ | -------------- | --- | ----------- |
-| 3      | `completed`    | 28  | sim         |
-| 4      | `didNotHappen` | 110 | não         |
-| 1      | `scheduled`    | 11  | não         |
-| 0      | `pending`      | 9   | não         |
-
-**Sem `--team`, o backend responde no escopo "My Meetings"** e a lista volta
-vazia. O filtro de time é o mesmo que o seletor "Team Strattum" do app aplica.
-
-### Nomes dos arquivos
+Três arquivos por reunião, mesmo nome, pastas separadas:
 
 ```
-out/2026-08-20_Rennova_<>_Strattum_2679290.txt
+out/txt/2026-08-20_Rennova_<>_Strattum_2679290.txt     transcrição
+out/json/2026-08-20_Rennova_<>_Strattum_2679290.json   falas com timing
+out/info/2026-08-20_Rennova_<>_Strattum_2679290.md     título, data, duração,
+                                                       organizador, rating,
+                                                       classificações,
+                                                       convidados, resumo
 ```
 
-`AAAA-MM-DD_Título_id.txt`, sem espaços. Quatro decisões por trás disso:
+O `.txt` é byte-a-byte idêntico ao download do app e corresponde à opção
+**"Original"**; a versão "Improve with AI" vive em `enhancedTranscript` e não é
+coberta.
 
-- **Sem espaços.** Todo espaço vira `_`, colapsado (nada de `__`).
-- **Data em horário de Brasília.** `meetingAt` vem em UTC (`19:00Z` = `16:00`
-  BRT); formatar em UTC jogaria reuniões noturnas para o dia seguinte.
-- **O id no fim.** Título+data colidem nos dados reais (duas "Dry run Vivo" em
-  2026-08-18). O id também é o índice do `sync` — não há manifesto separado.
-- **`/` e `:` viram `-`.** O título "RJ / Marco" criaria uma subpasta.
+O `.json` sai **sem `words[]`** — o timing palavra a palavra é ~95% do payload.
+O `.txt` é gerado antes do descarte, porque as palavras têm precedência sobre
+`text` na montagem do arquivo.
 
-Renomear é automático: ao encontrar um arquivo do esquema anterior, o `sync`
-renomeia em vez de rebaixar a transcrição.
+**Nem toda reunião tem resumo.** O template pertence a um usuário; os de outras
+pessoas respondem `403 TEMPLATE_ACCESS_DENIED` e a ficha sai com a seção de
+resumo vazia. `/api/templates` lista os que sua conta acessa.
 
-O resto da pontuação do título é preservado, então nomes como
-`2026-07-10_[Salesbud_+_Strattum]_Follow-Up!_2165614.txt` ainda contêm
-caracteres especiais de shell (`[]`, `!`, `<>`). Se atrapalhar em script, dá
-para restringir a um conjunto mais conservador.
+### Nomes
 
-## Estado
+`AAAA-MM-DD_Título_id.txt`, sem espaços.
 
-Transcrição: **calibrada e verificada** contra uma resposta real (81 falas,
-saída idêntica à do app).
+- Data em horário de Brasília — `meetingAt` vem em UTC, e formatar em UTC
+  jogaria reuniões noturnas para o dia seguinte.
+- Id no fim: título+data colidem (duas "Dry run Vivo" em 2026-08-18).
+- `/` e `:` viram `-`; o resto da pontuação é preservada, então nomes podem
+  conter `[]`, `!` e `<>`.
 
-Listagem: **calibrada**. Envelope (`meetings` / `hasMore` / `pageCount` /
-`itemCount`), shape do item e enum de status confirmados contra respostas reais.
-O backend limita a página a 30 itens independente do `limit` pedido.
+Arquivos de esquemas anteriores são renomeados no lugar, sem rebaixar nada.
 
-Verificação: o `.txt` gerado é **byte-a-byte idêntico** ao baixado pelo botão do
-app — mesmo sha256 (`6f3afdd…` para a reunião 2679290).
+## Filtros
+
+Só reuniões concluídas têm transcrição, então `--status completed` é o padrão:
+
+| status | nome           | transcrição |
+| ------ | -------------- | ----------- |
+| 3      | `completed`    | sim         |
+| 4      | `didNotHappen` | não         |
+| 1      | `scheduled`    | não         |
+| 0      | `pending`      | não         |
+
+Sem time definido, o backend responde no escopo "My Meetings" e a lista volta
+vazia. Use `SALESBUD_TEAM_ID` ou `--team`.
+
+## Endpoints
+
+```
+GET /api/teams
+GET /api/meetings?teamId=<id>&status=<n>&page=<n>&limit=30
+GET /api/meetings/{id}/transcription
+GET /api/meetings/admin/load/template?meetingId=<id>&templateId=<id>
+```
+
+O backend limita a página a 30 itens independente do `limit` pedido; a
+paginação segue o `hasMore` da resposta.
 
 ## Notas
 
+- **GET-only.** `src/http.ts` não sabe fazer outro método. O mesmo padrão de URL
+  expõe escrita em produção (`/title`, `/tags`, `/send-bot`, `/restart-bot`),
+  então a trava está no transporte, não numa convenção.
+- **PII.** Transcrição de call é dado sensível: `out/`, `samples/`, `.env` e
+  `.auth.json` estão no `.gitignore`. Mantenha assim.
 - Auth é AWS Cognito SRP (`us-east-1_xZKJMtRws`), o mesmo fluxo do navegador,
-  headless. Pool config é pública, vem do bundle. MFA não é suportado.
+  headless. A config do pool é pública, vem do bundle. MFA não é suportado.
 - Concorrência 2 e backoff exponencial: não há rate limit documentado.

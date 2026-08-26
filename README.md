@@ -53,20 +53,6 @@ transcrição nenhuma.
 
 O time vem de `SALESBUD_TEAM_ID` no `.env` (ou `--team`).
 
-### Nomes dos arquivos
-
-```
-out/2026-08-20 - Rennova <> Strattum - 2679290.txt
-```
-
-`AAAA-MM-DD - Título - id.txt`. Três decisões por trás disso:
-
-- **Data em horário de Brasília.** `meetingAt` vem em UTC (`19:00Z` = `16:00`
-  BRT); formatar em UTC jogaria reuniões noturnas para o dia seguinte.
-- **O id no fim.** Título+data colidem nos dados reais (duas "Dry run Vivo" em
-  2026-08-18). O id também é o índice do `sync` — não há manifesto separado.
-- **`/` vira `-`.** O título "RJ / Marco" criaria uma subpasta.
-
 **Só reuniões concluídas têm transcrição**, então `--status completed` é o
 padrão. Os status foram confirmados contra o time 1685 (a soma bate com o
 `itemCount` total, então a lista está completa):
@@ -81,8 +67,28 @@ padrão. Os status foram confirmados contra o time 1685 (a soma bate com o
 **Sem `--team`, o backend responde no escopo "My Meetings"** e a lista volta
 vazia. O filtro de time é o mesmo que o seletor "Team Strattum" do app aplica.
 
-Saída em `out/<meeting-id>.txt`. Reruns pulam o que já está no disco (`--force`
-ignora), então dá para interromper e retomar.
+### Nomes dos arquivos
+
+```
+out/2026-08-20_Rennova_<>_Strattum_2679290.txt
+```
+
+`AAAA-MM-DD_Título_id.txt`, sem espaços. Quatro decisões por trás disso:
+
+- **Sem espaços.** Todo espaço vira `_`, colapsado (nada de `__`).
+- **Data em horário de Brasília.** `meetingAt` vem em UTC (`19:00Z` = `16:00`
+  BRT); formatar em UTC jogaria reuniões noturnas para o dia seguinte.
+- **O id no fim.** Título+data colidem nos dados reais (duas "Dry run Vivo" em
+  2026-08-18). O id também é o índice do `sync` — não há manifesto separado.
+- **`/` e `:` viram `-`.** O título "RJ / Marco" criaria uma subpasta.
+
+Renomear é automático: ao encontrar um arquivo do esquema anterior, o `sync`
+renomeia em vez de rebaixar a transcrição.
+
+O resto da pontuação do título é preservado, então nomes como
+`2026-07-10_[Salesbud_+_Strattum]_Follow-Up!_2165614.txt` ainda contêm
+caracteres especiais de shell (`[]`, `!`, `<>`). Se atrapalhar em script, dá
+para restringir a um conjunto mais conservador.
 
 ## Estado
 

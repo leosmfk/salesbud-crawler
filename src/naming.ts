@@ -2,7 +2,10 @@ import { readdir } from "node:fs/promises";
 import type { MeetingSummary } from "./schemas";
 
 /**
- * Nome de arquivo das transcrições: `AAAA-MM-DD - Título - id.txt`
+ * Nome de arquivo das transcrições: `AAAA-MM-DD_Título_id.txt`
+ *
+ * Sem espaços — `_` separa tudo, inclusive os campos, para o nome não precisar
+ * de aspas em shell.
  *
  * O id no fim não é decoração: título+data colidem de verdade nos dados reais
  * (duas "Dry run Vivo" em 2026-08-18) e é ele que identifica o que já foi
@@ -13,16 +16,17 @@ import type { MeetingSummary } from "./schemas";
 const TIMEZONE = "America/Sao_Paulo";
 
 /**
- * Só o que quebra caminho: `/` criaria subpasta (existe o título "RJ / Marco")
- * e `:` confunde o Finder. Espaços e o resto da pontuação ficam como estão —
- * o nome tem que continuar parecido com o que o app mostra.
- * Quebras de linha caem no `\s+` logo abaixo.
+ * `/` criaria subpasta (existe o título "RJ / Marco") e `:` confunde o Finder;
+ * ambos viram `-`. Todo espaço (e quebra de linha) vira `_`, colapsado para não
+ * gerar sequências como `__`. O resto da pontuação fica como está, para o nome
+ * continuar parecido com o que o app mostra.
  */
 const sanitizeTitle = (title: string) =>
   title
     .replace(/[/\\:]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
 
 /** en-CA formata como AAAA-MM-DD, que ordena alfabeticamente. */
 const isoDay = (meetingAt: string) =>
@@ -30,7 +34,7 @@ const isoDay = (meetingAt: string) =>
 
 export const transcriptFileName = (meeting: MeetingSummary): string => {
   const day = meeting.meetingAt ? isoDay(meeting.meetingAt) : "sem-data";
-  return `${day} - ${sanitizeTitle(meeting.title)} - ${meeting.id}.txt`;
+  return `${day}_${sanitizeTitle(meeting.title)}_${meeting.id}.txt`;
 };
 
 /** Lê o id do fim do nome. Também reconhece o esquema antigo (`<id>.txt`). */

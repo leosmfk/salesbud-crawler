@@ -39,11 +39,23 @@ estão no `.gitignore`. Mantenha assim.
 cp .env.example .env    # preencha SALESBUD_EMAIL e SALESBUD_PASSWORD
 bun install
 
-bun run teams                          # descubra o id do time Strattum
-bun run export --team <id> --limit 5   # sempre comece pequeno
-bun run export --team <id>             # histórico do time
+bun run teams                          # descubra o id do time (Strattum = 1685)
+bun run export --team 1685 --limit 5   # sempre comece pequeno
+bun run export --team 1685             # todas as concluídas
+bun run export --team 1685 --status all
 bun run export --id 2679290            # uma só
 ```
+
+**Só reuniões concluídas têm transcrição**, então `--status completed` é o
+padrão. Os status foram confirmados contra o time 1685 (a soma bate com o
+`itemCount` total, então a lista está completa):
+
+| status | nome           | qtd | transcrição |
+| ------ | -------------- | --- | ----------- |
+| 3      | `completed`    | 28  | sim         |
+| 4      | `didNotHappen` | 110 | não         |
+| 1      | `scheduled`    | 11  | não         |
+| 0      | `pending`      | 9   | não         |
 
 **Sem `--team`, o backend responde no escopo "My Meetings"** e a lista volta
 vazia. O filtro de time é o mesmo que o seletor "Team Strattum" do app aplica.
@@ -56,9 +68,12 @@ ignora), então dá para interromper e retomar.
 Transcrição: **calibrada e verificada** contra uma resposta real (81 falas,
 saída idêntica à do app).
 
-Listagem: o envelope (`meetings` / `hasMore` / `pageCount`) está confirmado, mas
-o **shape do item de reunião ainda não** — a Fase 0 voltou vazia por causa do
-escopo. `meetingSummary` só exige `id` até vermos uma página cheia.
+Listagem: **calibrada**. Envelope (`meetings` / `hasMore` / `pageCount` /
+`itemCount`), shape do item e enum de status confirmados contra respostas reais.
+O backend limita a página a 30 itens independente do `limit` pedido.
+
+Verificação: o `.txt` gerado é **byte-a-byte idêntico** ao baixado pelo botão do
+app — mesmo sha256 (`6f3afdd…` para a reunião 2679290).
 
 ## Notas
 
